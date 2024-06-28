@@ -88,6 +88,8 @@ public class DragSelectTouchHandler implements RecyclerView.OnItemTouchListener 
         dragSelectActive = false;
         lastDraggedIndex = -1;
         firstItemPosition = -1;
+        lastTouchX = -1;
+        lastTouchY = -1;
         rvScroller.stop();
     }
 
@@ -103,75 +105,84 @@ public class DragSelectTouchHandler implements RecyclerView.OnItemTouchListener 
     @Override
     public void onTouchEvent(@NonNull RecyclerView rv, @NonNull MotionEvent e) {
         int action = e.getAction();
-        int itemPosition = getItemPosition(rv, e);
-
         if (action == MotionEvent.ACTION_MOVE) {
             if (hotspotHeight > -1) {
                 // Check for auto-scroll hotspot
                 rvScroller.onMove(e.getY());
             }
 
-            // Drag selection logic
-            if (mode == Mode.PATH) {
-                if (itemPosition == RecyclerView.NO_POSITION || lastDraggedIndex == itemPosition) {
-                    return;
-                }
-                if (lastDraggedIndex == RecyclerView.NO_POSITION) {
-                    // on drag start
-                    onDragStart(itemPosition);
-                    return;
-                }
-                lastDraggedIndex = itemPosition;
-                selectListener.onSetSelect(itemPosition, itemPosition, !startIsSelected);
+            onDraging(e.getX(), e.getY());
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            onDragSelectionStop();
+        }
+    }
+
+    private float lastTouchX = -1;
+    private float lastTouchY = -1;
+
+    private void onDraging(float x, float y) {
+        lastTouchX = x;
+        lastTouchY = y;
+
+        int itemPosition = getItemPosition(recyclerView, x, y);
+        // Drag selection logic
+        if (mode == Mode.PATH) {
+            if (itemPosition == RecyclerView.NO_POSITION || lastDraggedIndex == itemPosition) {
+                return;
+            }
+            if (lastDraggedIndex == RecyclerView.NO_POSITION) {
+                // on drag start
+                onDragStart(itemPosition);
+                return;
+            }
+            lastDraggedIndex = itemPosition;
+            selectListener.onSetSelect(itemPosition, itemPosition, !startIsSelected);
+            return;
+        }
+
+        if (mode == Mode.RANGE) {
+            if (itemPosition == RecyclerView.NO_POSITION || lastDraggedIndex == itemPosition) {
+                return;
+            }
+            if (lastDraggedIndex == RecyclerView.NO_POSITION) {
+                // on drag start
+                onDragStart(itemPosition);
                 return;
             }
 
-            if (mode == Mode.RANGE) {
-                if (itemPosition == RecyclerView.NO_POSITION || lastDraggedIndex == itemPosition) {
-                    return;
-                }
-                if (lastDraggedIndex == RecyclerView.NO_POSITION) {
-                    // on drag start
-                    onDragStart(itemPosition);
-                    return;
-                }
-
-                // firstItemPosition 为起始item的位置, 到 itemPosition 之间的item都会被选中
-                // 如果 lastDraggedIndex > itemPosition, 则从 itemPosition 到 lastDraggedIndex 之间的item都会取消选中
-                if (startIsSelected) {
-                    // 全部 unselect
-                    if (lastDraggedIndex > itemPosition) {
-                        selectListener.onSetSelect(itemPosition, lastDraggedIndex, false);
-                    } else {
-                        selectListener.onSetSelect(lastDraggedIndex, itemPosition, false);
-                    }
+            // firstItemPosition 为起始item的位置, 到 itemPosition 之间的item都会被选中
+            // 如果 lastDraggedIndex > itemPosition, 则从 itemPosition 到 lastDraggedIndex 之间的item都会取消选中
+            if (startIsSelected) {
+                // 全部 unselect
+                if (lastDraggedIndex > itemPosition) {
+                    selectListener.onSetSelect(itemPosition, lastDraggedIndex, false);
                 } else {
-                    int curStart = Math.min(itemPosition, firstItemPosition);
-                    int curEnd = Math.max(itemPosition, firstItemPosition);
-
-                    int lastStart = Math.min(lastDraggedIndex, firstItemPosition);
-                    int lastEnd = Math.max(lastDraggedIndex, firstItemPosition);
-
-                    int min = Math.min(curStart, lastStart);
-                    int max = Math.max(curEnd, lastEnd);
-                    if (min < curStart) {
-                        selectListener.onSetSelect(min, curStart-1, false);
-                    }
-                    if (max > curEnd) {
-                        selectListener.onSetSelect(curEnd+1, max, false);
-                    }
-
-                    if (curStart < lastStart) {
-                        selectListener.onSetSelect(curStart, lastStart-1, true);
-                    }
-                    if (curEnd > lastEnd) {
-                        selectListener.onSetSelect(lastEnd+1, curEnd, true);
-                    }
+                    selectListener.onSetSelect(lastDraggedIndex, itemPosition, false);
                 }
-                lastDraggedIndex = itemPosition;
+            } else {
+                int curStart = Math.min(itemPosition, firstItemPosition);
+                int curEnd = Math.max(itemPosition, firstItemPosition);
+
+                int lastStart = Math.min(lastDraggedIndex, firstItemPosition);
+                int lastEnd = Math.max(lastDraggedIndex, firstItemPosition);
+
+                int min = Math.min(curStart, lastStart);
+                int max = Math.max(curEnd, lastEnd);
+                if (min < curStart) {
+                    selectListener.onSetSelect(min, curStart-1, false);
+                }
+                if (max > curEnd) {
+                    selectListener.onSetSelect(curEnd+1, max, false);
+                }
+
+                if (curStart < lastStart) {
+                    selectListener.onSetSelect(curStart, lastStart-1, true);
+                }
+                if (curEnd > lastEnd) {
+                    selectListener.onSetSelect(lastEnd+1, curEnd, true);
+                }
             }
-        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            onDragSelectionStop();
+            lastDraggedIndex = itemPosition;
         }
     }
 
@@ -212,7 +223,7 @@ public class DragSelectTouchHandler implements RecyclerView.OnItemTouchListener 
                     //log("Now in TOP hotspot");
                     start();
                 }
-                autoScrollVelocity = (int) ((y - topEnd) / 2);
+                autoScrollVelocity = (int) ((y - topEnd) / 3);
                 //log("Auto scroll velocity = " + autoScrollVelocity);
             } else if (y >= bottomStart) {
                 inTopHotspot = false;
@@ -221,7 +232,7 @@ public class DragSelectTouchHandler implements RecyclerView.OnItemTouchListener 
                     //log("Now in BOTTOM hotspot");
                     start();
                 }
-                autoScrollVelocity = (int) ((y - bottomStart) / 2);
+                autoScrollVelocity = (int) ((y - bottomStart) / 3);
                 //log("Auto scroll velocity = " + autoScrollVelocity);
             } else if (inTopHotspot || inBottomHotspot) {
                 //log("Left the hotspot");
@@ -245,6 +256,10 @@ public class DragSelectTouchHandler implements RecyclerView.OnItemTouchListener 
         public void run() {
             recyclerView.scrollBy(0, autoScrollVelocity);
             recyclerView.postDelayed(this, 25);
+
+            if (lastTouchX != -1 && lastTouchY != -1) {
+                onDraging(lastTouchX, lastTouchY);
+            }
         }
     }
 }
